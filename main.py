@@ -49,10 +49,13 @@ def stock_code(s):
 
 
 def stock_value(context, stock):
-    return stock_price(context,stock)*stock_amount(context,stock)
+    return get_position(stock).market_value
 
 def stock_price(context, stock):
     return context.data[stock].last
+
+def stock_open(context, stock):
+    return context.data[stock].open
 
 def stock_amount(context,stock):
     return get_position(stock).quantity
@@ -109,6 +112,7 @@ def hold_info(context):
     m = '\t'
     for stock in list(context.portfolio.positions.keys()):
         name = stock_name(stock)
+        cost = stock_cost(context,stock)
         profit = stock_profit(context,stock)
         ratio = stock_value(context,stock)/port_total(context)
         m += '%s=%2.f(%.f) ' % (name, ratio*100, profit*100)
@@ -151,7 +155,8 @@ def stock_gain(context, stock, days=1, data='close'):
 
 
 def stock_profit(context, stock):
-    return get_position(stock).pnl/stock_cost(context,stock)
+    cost = stock_cost(context,stock)
+    return get_position(stock).pnl/cost if cost else 0
 
 def stock_days(context, stock):
     sdate = context.portfolio.positions[stock].init_time
@@ -282,9 +287,10 @@ def rebalance(context, newset=[], ratio=1):
     # tobuy = [stock for stock in tobuy if stock not in holding]
     if len(tobuy) == 0: return []
     money = port_total(context) / len(tobuy) * ratio
-    for stock in tobuy: order_money(context, stock, money)
+    for stock in tobuy:
+        order_money(context, stock, money)
     #return []
-    return [stock for stock in tobuy if stock not in context.portfolio.positions]
+    #return [stock for stock in tobuy if stock not in context.portfolio.positions]
 
 
 def do_daily(context, bar_dict):
@@ -296,13 +302,13 @@ def do_daily(context, bar_dict):
     context.rsi = stock_rsi(context.BENCH, '1d', period=6)
     if len(context.new):
         rebalance(context, context.new)
-        #context.new = []
-        context.new = [stock for stock in context.new if stock not in context.portfolio.positions]
+        context.new = []
+        #context.pending = [stock for stock in context.new if stock not in context.portfolio.positions]
     if len(context.pending):
         money = port_total(context)/len(context.pending)
         for stock in context.pending:
             order_money(context,stock,money)
-            #context.pending = [stock for stock in context.pending if stock not in context.portfolio.positions]
+            context.pending = [] #[stock for stock in context.pending if stock not in context.portfolio.positions]
     print(port_info(context))
     print(hold_info(context))
     #return ## disable optimization
@@ -325,7 +331,6 @@ def do_daily(context, bar_dict):
             if abs(score)>0.2 and mode>0.5:
                 order_ratio(context,stock,score*1)
 
-
 def trend(context,stock):
     mrs = stock_rsi(stock,'1M')
     wrs = stock_rsi(stock,'1w')
@@ -341,9 +346,9 @@ def pool_filter(context,pool):
             is_st_stock(stock) or  # ST
             ('ST' in stock_name(stock)) or
             ('*' in stock_name(stock)) or
-            ('退' in stock_name(stock))
-            #(curr_data[stock].last == curr_data[stock].limit_up) or   # 涨停开盘
-            #(curr_data[stock].last == curr_data[stock].limit_down)   # 跌停开盘
+            ('退' in stock_name(stock)) or
+            (curr_data[stock].last == curr_data[stock].limit_up) or   # 涨停开盘
+            (curr_data[stock].last == curr_data[stock].limit_down)   # 跌停开盘
             # stock.startswith('300') or    # 创业
             #stock.startswith('688') # 科创
             )]
@@ -397,19 +402,20 @@ def stocks_get(context,pool=[],cap_req=10,rev_req=15,pe_req=50,
         jqdatasdk.valuation.market_cap>cap_req,
         jqdatasdk.indicator.roe>roe_req,
         jqdatasdk.valuation.pe_ratio.between(0,pe_req),
+        jqdatasdk.valuation.pe_ratio<(jqdatasdk.indicator.inc_operation_profit_year_on_year
+                    +jqdatasdk.indicator.inc_operation_profit_annual)*0.75,
         jqdatasdk.indicator.gross_profit_margin>gross_req,
         jqdatasdk.indicator.inc_revenue_year_on_year>rev_req,
-        jqdatasdk.valuation.pe_ratio<(jqdatasdk.indicator.inc_operation_profit_year_on_year+jqdatasdk.indicator.inc_operation_profit_annual)/2,
+        jqdatasdk.indicator.inc_operation_profit_year_on_year>jqdatasdk.indicator.inc_revenue_year_on_year,
         jqdatasdk.cash_flow.net_operate_cash_flow>jqdatasdk.income.net_profit*cf_ratio,
     ).order_by(jqdatasdk.valuation.pe_ratio-jqdatasdk.indicator.gross_profit_margin/10), date=date)
 
     slist = stocks['code'].tolist()
-    slist = [stock for stock in slist if stock in pool]
-    if len(slist)==0: return slist
+    if len(slist)==0: return []
     buy = []
     q4 = get_q4(context,slist)
     q4.index = q4.code
-    for stock in list(slist):
+    for stock in slist:
         if stock not in q4.roe: continue
         roe5 = q4.roe[stock]
         gross5 = q4.grossProfitMargin[stock]
@@ -430,20 +436,21 @@ def stocks_get(context,pool=[],cap_req=10,rev_req=15,pe_req=50,
 def init(context):
     global_setup(context)
     #rscheduler.run_weekly(do_weekly,1,time_rule=market_open(minute=0)
-    scheduler.run_monthly(period_start, tradingday=1, time_rule='before_trading')
-    scheduler.run_daily(do_daily, time_rule=market_close(minute=3))
+    scheduler.run_monthly(period_start, tradingday=-1, time_rule=market_open(minute=1))
+    scheduler.run_daily(do_daily, time_rule=market_open(minute=1))
 
 # 你选择的证券的数据更新将会触发此段逻辑，例如日或分钟历史数据切片或者是实时数据切片更新
 def handle_barrr(context, bar_dict):
     do_daily(context,bar_dict)
     context.data = bar_dict
-    print(stock_price(context,'600720.XSHG'))
+    print('%s %.2f'%(stock,stock_price(context,'600720.XSHG')))
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 config = {
   "base": {
-    "start_date": "2020-01-01",
-    "end_date": "2021-04-01",
+    "start_date": "2013-12-31",
+    "end_date": "2021-04-24",
+    "frequency": "1d",
     "data_bundle_path":"D:\python\data\\bundle",
     "accounts": {
         "stock": 1000000
