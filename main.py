@@ -1,4 +1,4 @@
-## 2014: 11839
+## 2014: 11973
 from rqalpha import run_func
 from rqalpha.apis import update_universe, logger, order_percent
 import jqdatasdk as jq
@@ -383,8 +383,8 @@ def get_q4(context, stock):
                 data.at[row['code'], field] = tmp + row[field]
     return data
 
-def stocks_get(context, pool=[], cap_req=10, rev_req=15, pe_req=50,
-            gross_req=15, roe_req=3, roe_ratio=1.2, cf_ratio=1.5):
+def stocks_get(context, pool=[], cap_req=15, rev_req=15, pe_req=50,
+            gross_req=12, roe_req=3, roe_ratio=1.2, cf_ratio=1.5):
     date = current_date(context).strftime('%Y-%m-%d')
     if pool==[]: pool = get_all_stocks(context)
     pool = pool_filter(context,pool)
