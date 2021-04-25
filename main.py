@@ -1,14 +1,13 @@
-
+## 2014: 10860
 from rqalpha import run_func
 from rqalpha.apis import update_universe, logger, order_percent
-import jqdatasdk
+import jqdatasdk as jq
 import talib, numpy, math, random, copy, pytz, time, json, requests, pandas as pd
 from pandas.io.json import json_normalize
 #import statsmodels.api as sm
 from pandas.core.frame import DataFrame
 from datetime import datetime, tzinfo, timedelta
 from collections import Counter
-#from jqdata import *
 #from six import BytesIO
 
 def get_all_stocks(context):
@@ -57,11 +56,11 @@ def stock_price(context, stock):
 def stock_open(context, stock):
     return context.data[stock].open
 
-def stock_amount(context,stock):
+def stock_amount(context, stock):
     return get_position(stock).quantity
 
 def stock_cost(context, stock):
-    return stock_value(context,stock)-get_position(stock).pnl
+    return stock_value(context,stock) - get_position(stock).pnl
 
 def stock_inport(context, stock): return stock in context.portfolio.positions
 
@@ -74,7 +73,7 @@ def stime(context): return str(context.now.time())
 
 def rsi_ok(stock, unit='1d', period=14, data='close'):
     rsi = stock_rsi(stock, unit, period, data)
-    return (rsi < 35 or 50 < rsi < 85)
+    return (rsi < 35 or 45 < rsi < 85)
 
 
 def rsi_good(stock, unit='1d', period=14, data='close'):
@@ -96,7 +95,7 @@ def rsi_weak(stock, unit='1d', period=6, data='close'):
 def rsi_peaked(stock, unit='1d', period=14):
     rsi = stock_rsi(stock, unit, period)
     vrsi = stock_rsi(stock, unit, period, data='volume')
-    return ((rsi > 90 and vrsi > 60) or rsi > 95)
+    return ((rsi > 90 and vrsi > 65) or rsi > 95)
 
 
 def order_limit(stock, shares, price):
@@ -115,7 +114,7 @@ def hold_info(context):
         cost = stock_cost(context,stock)
         profit = stock_profit(context,stock)
         ratio = stock_value(context,stock)/port_total(context)
-        m += '%s=%2.f(%.f) ' % (name, ratio*100, profit*100)
+        m += '%s=%2.f(%.f) ' %(name, ratio*100, profit*100)
     return m
 
 
@@ -135,7 +134,8 @@ def stock_info(context, stock):
     net = stock_value(context,stock) - stock_cost(context,stock)
     return '  %s: 现价=%.2f 收益=%2.0f%% 利润=%d 股数=%d' % (
         stock_name(stock), price, profit * 100,
-        stock_profit(context,stock)*stock_cost(context,stock), stock_amount(context,stock))
+        stock_profit(context, stock) * stock_cost(context, stock),
+        stock_amount(context, stock))
 
 
 def stock_mode(context, stock, unit='1d', days=6):
@@ -190,9 +190,9 @@ def order_money(context, stock, money):
 
 
 def order_ratio(context, stock, ratio):
-    shares = stock_amount(context,stock) * ratio
+    shares = stock_amount(context, stock) * ratio
     price = stock_price(context, stock)
-    if shares>0: shares = min(shares,port_cash(context)/price)
+    if shares>0: shares = min(shares, port_cash(context)/price)
     if abs(shares) < 100: return None
     return order(stock, shares)
 
@@ -209,7 +209,7 @@ def remove_loss(context, tobuy, percent=-0.12):  ## remove those losing stocks
 def hold_clear(context, ratio=1):
     print('账户清仓 ' + port_info(context))
     for stock in context.portfolio.positions:
-        shares = stock_amount(context,stock)
+        shares = stock_amount(context, stock)
         order_target(stock, -shares * (1 - ratio))
 
 
@@ -246,7 +246,7 @@ def after_code_changed(context):
     unschedule_all()  # 重置，方便代码升级
     global_setup(context)
     run_monthly(period_start, 1, time='8:30')
-    # run_weekly(do_weekly,1,time='open')
+    # run_weekly(do_weekly, 1, time='open')
     run_daily(do_daily, time='open')
 
 
@@ -311,31 +311,31 @@ def do_daily(context, bar_dict):
             context.pending = [] #[stock for stock in context.pending if stock not in context.portfolio.positions]
     print(port_info(context))
     print(hold_info(context))
-    #return ## disable optimization
+    return ## disable daily optimization
     sell_pending(context)
     dapan_mode = stock_mode(context,context.BENCH)
     for stock in context.portfolio.positions:
-        mode = stock_mode(context,stock,days=7)
-        if rsi_peaked(stock): order_target(stock,0)
-        elif rsi_strong(stock,period=6): order_ratio(context,stock,1)
-        elif mode<0.2 and dapan_mode==0:
-            order_ratio(context,stock,-0.2)
-        elif mode>0.8 and dapan_mode==1:
-            order_ratio(context,stock,0.2)
+        mode = stock_mode(context, stock, days=7)
+        if mode == 0 and dapan_mode == 0:
+            order_ratio(context, stock, -0.2)
+        elif mode == 1 and dapan_mode == 1:
+            order_ratio(context, stock, 0.2)
+        elif rsi_peaked(stock): order_target(stock,0)
+        elif rsi_strong(stock, period=6): order_ratio(context, stock, 1)
         else :
-            score = trend(context,stock)
+            score = trend(context, stock)
             if score:
-                order_ratio(context,stock,score*0.5)
+                order_ratio(context, stock, score*0.5)
                 continue
-            score = stock_gain(context,stock,days=5)
+            score = stock_gain(context, stock, days=5)
             if abs(score)>0.2 and mode>0.5:
-                order_ratio(context,stock,score*1)
+                order_ratio(context, stock, score*1)
 
 def trend(context,stock):
     mrs = stock_rsi(stock,'1M')
     wrs = stock_rsi(stock,'1w')
     drs = stock_rsi(stock,'1d')
-    #if (50<mrs<85) and (wrs>mrs) and (drs>wrs):  return 1
+    if (50<mrs<85) and (wrs>mrs) and (drs>wrs):  return 1
     if (30<mrs<50) and (wrs<mrs) and (drs<wrs):  return -1
     else: return 0
 
@@ -346,15 +346,15 @@ def pool_filter(context,pool):
             is_st_stock(stock) or  # ST
             ('ST' in stock_name(stock)) or
             ('*' in stock_name(stock)) or
-            ('退' in stock_name(stock)) or
-            (curr_data[stock].last == curr_data[stock].limit_up) or   # 涨停开盘
-            (curr_data[stock].last == curr_data[stock].limit_down)   # 跌停开盘
+            ('退' in stock_name(stock))
+            #(curr_data[stock].last == curr_data[stock].limit_up) or   # 涨停开盘
+            #(curr_data[stock].last == curr_data[stock].limit_down)   # 跌停开盘
             # stock.startswith('300') or    # 创业
             #stock.startswith('688') # 科创
             )]
     return pool
 
-jqdatasdk.auth('13135685382', 'Fqm120103011125')
+jq.auth('13135685382', 'Fqm120103011125')
 
 def get_q4(context, stock):
     """
@@ -381,39 +381,38 @@ def get_q4(context, stock):
                 data.at[row['code'], field] = tmp + row[field]
     return data
 
-def stocks_get(context,pool=[],cap_req=10,rev_req=15,pe_req=50,
-            gross_req=15,roe_req=3,roe_ratio=1.2,cf_ratio=1.5):
+def stocks_get(context, pool=[], cap_req=10, rev_req=15, pe_req=50,
+            gross_req=15, roe_req=3, roe_ratio=1.2, cf_ratio=1.5):
     date = current_date(context).strftime('%Y-%m-%d')
     if pool==[]: pool = get_all_stocks(context)
     pool = pool_filter(context,pool)
-    q = jqdatasdk.query(
-        jqdatasdk.cash_flow.pubDate,
-        jqdatasdk.valuation.code,
-        jqdatasdk.valuation.pe_ratio,
-        jqdatasdk.valuation.market_cap,
-        jqdatasdk.indicator.roe,
-        jqdatasdk.cash_flow.net_operate_cash_flow,
-        jqdatasdk.income.net_profit,
-        jqdatasdk.income.operating_revenue,
-        jqdatasdk.indicator.gross_profit_margin,
-    )
-    stocks = jqdatasdk.get_fundamentals(q.filter(
-        jqdatasdk.valuation.code.in_(pool),
-        jqdatasdk.valuation.market_cap>cap_req,
-        jqdatasdk.indicator.roe>roe_req,
-        jqdatasdk.valuation.pe_ratio.between(0,pe_req),
-        jqdatasdk.valuation.pe_ratio<(jqdatasdk.indicator.inc_operation_profit_year_on_year
-                    +jqdatasdk.indicator.inc_operation_profit_annual)*0.75,
-        jqdatasdk.indicator.gross_profit_margin>gross_req,
-        jqdatasdk.indicator.inc_revenue_year_on_year>rev_req,
-        jqdatasdk.indicator.inc_operation_profit_year_on_year>jqdatasdk.indicator.inc_revenue_year_on_year,
-        jqdatasdk.cash_flow.net_operate_cash_flow>jqdatasdk.income.net_profit*cf_ratio,
-    ).order_by(jqdatasdk.valuation.pe_ratio-jqdatasdk.indicator.gross_profit_margin/10), date=date)
-
+    q = jq.query(
+        jq.cash_flow.pubDate,
+        jq.valuation.code,
+        jq.valuation.pe_ratio,
+        jq.valuation.market_cap,
+        jq.indicator.roe,
+        jq.cash_flow.net_operate_cash_flow,
+        jq.income.net_profit,
+        jq.income.operating_revenue,
+        jq.indicator.gross_profit_margin,
+    ).filter(
+        jq.valuation.code.in_(pool),
+        jq.valuation.market_cap>cap_req,
+        jq.indicator.roe>roe_req,
+        jq.valuation.pe_ratio.between(0, pe_req),
+        jq.valuation.pe_ratio<(jq.indicator.inc_operation_profit_year_on_year
+                    +jq.indicator.inc_operation_profit_annual)*0.75,
+        jq.indicator.gross_profit_margin>gross_req,
+        jq.indicator.inc_revenue_year_on_year>rev_req,
+        jq.indicator.inc_operation_profit_year_on_year>jq.indicator.inc_revenue_year_on_year,
+        jq.cash_flow.net_operate_cash_flow>jq.income.net_profit*cf_ratio,
+    ).order_by(jq.valuation.pe_ratio-jq.indicator.gross_profit_margin/10)
+    stocks = jq.get_fundamentals(q, date=date)
     slist = stocks['code'].tolist()
     if len(slist)==0: return []
     buy = []
-    q4 = get_q4(context,slist)
+    q4 = get_q4(context, slist)
     q4.index = q4.code
     for stock in slist:
         if stock not in q4.roe: continue
@@ -441,9 +440,9 @@ def init(context):
 
 # 你选择的证券的数据更新将会触发此段逻辑，例如日或分钟历史数据切片或者是实时数据切片更新
 def handle_barrr(context, bar_dict):
-    do_daily(context,bar_dict)
+    do_daily(context, bar_dict)
     context.data = bar_dict
-    print('%s %.2f'%(stock,stock_price(context,'600720.XSHG')))
+    print('%s %.2f'%(stock, stock_price(context, '600720.XSHG')))
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 config = {
@@ -453,7 +452,7 @@ config = {
     "frequency": "1d",
     "data_bundle_path":"D:\python\data\\bundle",
     "accounts": {
-        "stock": 1000000
+        "stock": 100000
     }
   },
   "extra": {
@@ -469,4 +468,4 @@ config = {
 }
 
 # 你选择的证券的数据更新将会触发此段逻辑，例如日或分钟历史数据切片或者是实时数据切片更新
-results = run_func(init=init,config=config)
+results = run_func(config=config, init=init)
