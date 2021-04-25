@@ -1,4 +1,4 @@
-## 2014: 10860
+## 2014: 11839
 from rqalpha import run_func
 from rqalpha.apis import update_universe, logger, order_percent
 import jqdatasdk as jq
@@ -13,7 +13,7 @@ from collections import Counter
 def get_all_stocks(context):
     return all_instruments(type='CS')['order_book_id'].tolist()
 
-def order_target(stock,shares): order_to(stock,shares)
+def order_target(stock, shares): order_to(stock, shares)
 
 def do_message(m): print(m) #, send_message(m, channel='weixin')
 
@@ -311,7 +311,9 @@ def do_daily(context, bar_dict):
             context.pending = [] #[stock for stock in context.pending if stock not in context.portfolio.positions]
     print(port_info(context))
     print(hold_info(context))
-    return ## disable daily optimization
+    #day_optimize(context)
+
+def day_optimize(context):
     sell_pending(context)
     dapan_mode = stock_mode(context,context.BENCH)
     for stock in context.portfolio.positions:
@@ -342,14 +344,14 @@ def trend(context,stock):
 def pool_filter(context,pool):
     curr_data = context.data
     pool = [stock for stock in pool if not (
-            is_suspended(stock) or  # 停牌
-            is_st_stock(stock) or  # ST
-            ('ST' in stock_name(stock)) or
-            ('*' in stock_name(stock)) or
-            ('退' in stock_name(stock))
-            #(curr_data[stock].last == curr_data[stock].limit_up) or   # 涨停开盘
-            #(curr_data[stock].last == curr_data[stock].limit_down)   # 跌停开盘
-            # stock.startswith('300') or    # 创业
+            is_suspended(stock)   # 停牌
+            or is_st_stock(stock)   # ST
+            or ('ST' in stock_name(stock))
+            or ('*' in stock_name(stock))
+            or ('退' in stock_name(stock))
+            #or (curr_data[stock].last == curr_data[stock].limit_up)     # 涨停开盘
+            #or (curr_data[stock].last == curr_data[stock].limit_down)   # 跌停开盘
+            #or stock.startswith('300')     # 创业
             #stock.startswith('688') # 科创
             )]
     return pool
@@ -452,7 +454,7 @@ config = {
     "frequency": "1d",
     "data_bundle_path":"D:\python\data\\bundle",
     "accounts": {
-        "stock": 100000
+        "stock": 1000000
     }
   },
   "extra": {
